@@ -72,6 +72,25 @@ Colección de métricas del host (CPU, RAM, GPU AMD) y desglose por contenedor D
 | `node_memory_MemAvailable_bytes` | RAM libre del host |
 | `node_load1` / `node_load5` | Presión general del sistema |
 
+#### Métricas clave disponibles vía cAdvisor (por contenedor)
+
+| Métrica | Descripción |
+|---|---|
+| `rate(container_cpu_usage_seconds_total[1m])` | Uso de CPU por contenedor (núcleos) |
+| `container_memory_usage_bytes` | RAM total consumida por el contenedor (incluye cache) |
+| `container_memory_working_set_bytes` | RAM real en uso (excluye cache — mejor indicador de presión de memoria) |
+| `container_memory_limit_bytes` | Límite de RAM configurado para el contenedor |
+| `rate(container_network_receive_bytes_total[1m])` | Tráfico de red entrante por contenedor |
+| `rate(container_network_transmit_bytes_total[1m])` | Tráfico de red saliente por contenedor |
+| `rate(container_fs_reads_bytes_total[1m])` | I/O de disco — lecturas por contenedor |
+| `rate(container_fs_writes_bytes_total[1m])` | I/O de disco — escrituras por contenedor |
+
+Todas admiten el label `name` para filtrar por contenedor: `{name="ollama"}`, `{name="prometheus"}`, etc.
+
+#### Observaciones de validación
+
+**llama 3.2 3B con AMD RX 6600** — `node_drm_memory_vram_used_bytes` mostró un pico de ~3,7 GB (≈ 4.000.000.000 bytes) al procesar la primera petición al modelo. El valor persistió tras la respuesta, confirmando que Ollama mantiene el modelo cargado en VRAM entre peticiones para evitar el coste de recarga.
+
 ### Etapa 2 — Métricas de runtime Ollama
 
 Métricas del propio runtime de Ollama desde su endpoint `/metrics` nativo (`:11434`).
@@ -142,7 +161,7 @@ El proxy registra cada request como span OTel en OpenLIT y reenvía de forma tra
 
 | Servicio | Puerto | Descripción |
 |---|---|---|
-| Grafana | 3000 | Dashboards de hardware y runtime |
+| Grafana | 3001 | Dashboards de hardware y runtime |
 | OpenLIT | 3001 | Explorador de trazas semánticas |
 | Prometheus | 9090 | Almacenamiento de métricas |
 | Proxy (Anthropic) | 8585 | Intercepta llamadas a la API de Anthropic |
