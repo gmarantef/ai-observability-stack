@@ -45,7 +45,7 @@ HOST
 
 | # | Etapa | Rama | Estado |
 |---|---|---|---|
-| 1 | Métricas de hardware | `feat/hardware-metrics` | Pendiente |
+| 1 | Métricas de hardware | `feat/hardware-metrics` | En progreso |
 | 2 | Métricas de runtime Ollama | `feat/ollama-runtime-metrics` | Pendiente |
 | 3 | Trazabilidad semántica — modelos locales | `feat/otel-local` | Pendiente |
 | 4 | Trazabilidad semántica — modelos remotos | `feat/otel-remote-proxy` | Pendiente |
@@ -58,6 +58,19 @@ Colección de métricas del host (CPU, RAM, GPU AMD) y desglose por contenedor D
 - **`cAdvisor`** (`gcr.io/cadvisor/cadvisor`): CPU y RAM desglosados por contenedor — permite ver qué servicio (ej. `ollama`) está consumiendo qué.
 - Ambos son host-level: cubren este compose y cualquier compose externo actual o futuro sin modificarlos.
 - Granularidad GPU por modelo concreto (qué modelo dentro de Ollama usa cuánta VRAM): esto es información semántica, se captura en Etapa 3 vía OTel.
+
+#### Métricas clave disponibles vía node_exporter (AMD RX 6600)
+
+| Métrica | Descripción |
+|---|---|
+| `node_drm_gpu_busy_percent{card="card1"}` | Utilización de la GPU durante inferencia |
+| `node_drm_memory_vram_used_bytes{card="card1"}` | VRAM consumida por modelos cargados |
+| `node_drm_memory_vram_size_bytes{card="card1"}` | VRAM total disponible (8 GB) |
+| `node_drm_memory_gtt_used_bytes{card="card1"}` | GTT: RAM del sistema usada como overflow cuando el modelo no cabe en VRAM |
+| `node_drm_card_info{card="card1",...}` | Metadatos de la GPU (vendor, fabricante de memoria) |
+| `rate(node_cpu_seconds_total{mode!="idle"}[1m])` | Uso de CPU del host |
+| `node_memory_MemAvailable_bytes` | RAM libre del host |
+| `node_load1` / `node_load5` | Presión general del sistema |
 
 ### Etapa 2 — Métricas de runtime Ollama
 

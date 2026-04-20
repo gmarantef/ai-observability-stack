@@ -21,6 +21,28 @@ services:
     networks:
       - monitoring
 
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.drm"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    expose:
+      - 9100
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    networks:
+      - monitoring
+
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
