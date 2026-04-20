@@ -1,0 +1,36 @@
+# AI assistant context (local only)
+.claude/
+CLAUDE.md
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Docker volumes / persistent data
+data/
+volumes/
+grafana-data/
+prometheus-data/
+openlit-data/
+
+# Secrets and credentials
+*.key
+*.pem
+*.p12
+*.crt
+secrets/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Logs
+*.log
+logs/
