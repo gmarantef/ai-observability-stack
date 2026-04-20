@@ -41,6 +41,49 @@ HOST
 └── proxy reenvía ──→ api.anthropic.com / openai   │
 ```
 
+## Etapas de desarrollo
+
+| # | Etapa | Rama | Estado |
+|---|---|---|---|
+| 1 | Métricas de hardware | `feat/hardware-metrics` | Pendiente |
+| 2 | Métricas de runtime Ollama | `feat/ollama-runtime-metrics` | Pendiente |
+| 3 | Trazabilidad semántica — modelos locales | `feat/otel-local` | Pendiente |
+| 4 | Trazabilidad semántica — modelos remotos | `feat/otel-remote-proxy` | Pendiente |
+
+### Etapa 1 — Métricas de hardware
+
+Colección de métricas del host (CPU, RAM, GPU AMD) y desglose por contenedor Docker.
+
+- **`node_exporter`** (`prom/node-exporter`) con `--collector.drm`: GPU load %, VRAM usada/total, GTT (RAM de sistema en offload), temperatura, frecuencias CPU/GPU, RAM total del host.
+- **`cAdvisor`** (`gcr.io/cadvisor/cadvisor`): CPU y RAM desglosados por contenedor — permite ver qué servicio (ej. `ollama`) está consumiendo qué.
+- Ambos son host-level: cubren este compose y cualquier compose externo actual o futuro sin modificarlos.
+- Granularidad GPU por modelo concreto (qué modelo dentro de Ollama usa cuánta VRAM): esto es información semántica, se captura en Etapa 3 vía OTel.
+
+### Etapa 2 — Métricas de runtime Ollama
+
+Métricas del propio runtime de Ollama desde su endpoint `/metrics` nativo (`:11434`).
+
+- Tokens por segundo, latencia de inferencia, modelos cargados en VRAM, cola de requests.
+- Prometheus scrape directo al contenedor `ollama` a través de la red `monitoring`.
+- Depende de Etapa 1 (Prometheus operativo).
+
+### Etapa 3 — Trazabilidad semántica — modelos locales
+
+Captura de trazas OTel de cada llamada de inferencia a modelos locales.
+
+- **OpenLIT** desplegado en este compose, con su OTel Collector embebido.
+- Los composes externos instrumentan sus llamadas para enviar spans al collector de OpenLIT.
+- Atributos por span: prompt, respuesta, modelo, tokens, latencia, coste estimado.
+- Permite diferenciar consumo por modelo concreto (complementa la vista de hardware de Etapa 1).
+
+### Etapa 4 — Trazabilidad semántica — modelos remotos
+
+Extensión de la capa semántica a APIs remotas (Anthropic, OpenAI).
+
+- Proxy HTTP en este compose (`:8585` Anthropic, `:8586` OpenAI).
+- Intercepta llamadas de agentes locales (Claude Code, Codex), inyecta span OTel y reenvía de forma transparente.
+- Misma UI OpenLIT que Etapa 3 — visión unificada de modelos locales y remotos.
+
 ## Stack
 
 - **Prometheus** — scraping de métricas de runtime de Ollama y hardware GPU
