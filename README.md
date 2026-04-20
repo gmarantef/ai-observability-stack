@@ -84,6 +84,17 @@ Extensión de la capa semántica a APIs remotas (Anthropic, OpenAI).
 - Intercepta llamadas de agentes locales (Claude Code, Codex), inyecta span OTel y reenvía de forma transparente.
 - Misma UI OpenLIT que Etapa 3 — visión unificada de modelos locales y remotos.
 
+## Almacenamiento de métricas a largo plazo
+
+Por defecto Prometheus almacena métricas en local con retención de 15 días — suficiente para el uso habitual del stack. Si en el futuro se necesita retención larga, alta disponibilidad o backups gestionados, las opciones evaluadas son:
+
+| Opción | Descripción | Cuándo considerar |
+|---|---|---|
+| **VictoriaMetrics** | Recibe `remote_write` de Prometheus, muy ligera, drop-in replacement. Es en sí misma un sistema de métricas completo. | Retención larga + HA multi-nodo con mínima complejidad |
+| **ClickHouse** | BD columnar OLAP con integración oficial `remote_write` y datasource nativo en Grafana. Más pesada operativamente. | Análisis histórico avanzado (comparativas semana vs mes, etc.) |
+
+Postgres vanilla no es una opción viable — el modelo relacional no encaja con series temporales de alta cardinalidad.
+
 ## Stack
 
 - **Prometheus** — scraping de métricas de runtime de Ollama y hardware GPU
