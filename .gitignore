@@ -1,6 +1,7 @@
-# AI assistant context (local only)
+# AI assistant context and local notes (local only)
 .claude/
 CLAUDE.md
+notes/
 
 # Environment
 .env
