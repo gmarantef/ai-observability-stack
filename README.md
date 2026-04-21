@@ -35,7 +35,7 @@ HOST
 │                  red Docker externa compartida   │
 │         ┌────────────────────────────────────┐  │
 │         │  OLLAMA COMPOSE (externo)          │  │
-│         │  ollama:11434/metrics ─────────────┘  │
+│         │  ollama:11434 ◄─ ollama-metrics ───┘  │
 │         └────────────────────────────────────┘  │
 │                                                  │
 └── proxy reenvía ──→ api.anthropic.com / openai   │
@@ -128,7 +128,9 @@ Métricas disponibles:
 | `ollama_request_duration_seconds{model}` | Histogram | Duración total del request |
 | `ollama_time_per_token_seconds{model}` | Histogram | Tiempo por token generado |
 
-**Requisito:** los clientes deben apuntar a `ollama-metrics:8082` en vez de a `ollama:11434` directamente. Las métricas de tokens y latencia solo se capturan para el tráfico que pasa por el proxy.
+**Requisito:** los clientes deben apuntar a `ollama-metrics:8082` en vez de a `ollama:11434` directamente. Las métricas de tokens y latencia solo se capturan para el tráfico que pasa por el proxy — peticiones que lleguen directamente a Ollama no quedan instrumentadas.
+
+**Nota:** `ollama_loaded_models`, `ollama_model_loaded` y `ollama_model_ram_mb` se obtienen por polling de `/api/ps` y están disponibles siempre, independientemente de si el tráfico pasa por el proxy.
 
 ### Etapa 3 — Trazabilidad semántica — modelos locales
 
@@ -195,5 +197,6 @@ El proxy registra cada request como span OTel en OpenLIT y reenvía de forma tra
 | Grafana | 3001 | Dashboards de hardware y runtime |
 | OpenLIT | 3002 | Explorador de trazas semánticas |
 | Prometheus | 9090 | Almacenamiento de métricas |
+| ollama-metrics | — | Proxy sidecar de Ollama, solo accesible dentro de la red `monitoring` |
 | Proxy (Anthropic) | 8585 | Intercepta llamadas a la API de Anthropic |
 | Proxy (OpenAI) | 8586 | Intercepta llamadas a APIs compatibles con OpenAI |
