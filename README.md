@@ -47,7 +47,7 @@ HOST
 |---|---|---|---|
 | 1 | Métricas de hardware | `feat/hardware-metrics` | Completada |
 | 2 | Métricas de runtime Ollama | `feat/ollama-runtime-metrics` | Completada |
-| 3 | Dashboards Grafana | `feat/grafana-dashboards` | Pendiente |
+| 3 | Dashboards Grafana | `feat/grafana-dashboards` | Completada |
 | 4 | Trazabilidad semántica — modelos locales | `feat/otel-local` | Pendiente |
 | 5 | Trazabilidad semántica — modelos remotos | `feat/otel-remote-proxy` | Pendiente |
 
@@ -135,11 +135,45 @@ Métricas disponibles:
 
 ### Etapa 3 — Dashboards Grafana
 
-Visualización unificada de las métricas de hardware (Etapa 1) y runtime de Ollama (Etapa 2) en Grafana.
+Visualización unificada en Grafana de las métricas de hardware (Etapa 1) y runtime de Ollama (Etapa 2). Todos los dashboards se provisionan como código en `grafana/provisioning/dashboards/` — sin configuración manual.
 
-- Dashboard de hardware: GPU (utilización, VRAM, GTT, temperatura), CPU y RAM del host.
-- Dashboard de Ollama: modelos cargados, tokens generados, latencia de inferencia, tiempo por token.
-- Provisioning vía ficheros en `grafana/provisioning/` — dashboards como código, sin configuración manual.
+#### Dashboards disponibles
+
+| Fichero | Título | Origen |
+|---|---|---|
+| `hardware.json` | Node Exporter Full | [rfmoz/grafana-dashboards](https://github.com/rfmoz/grafana-dashboards) (id: 1860) + sección **AMD GPU** añadida |
+| `ollama.json` | Ollama Metrics Dashboard | [NorskHelsenett/ollama-metrics](https://github.com/NorskHelsenett/ollama-metrics) — dashboard oficial del proxy |
+| `cadvisor.json` | cadvisor dashboard | [grafana.com/dashboards/19792](https://grafana.com/grafana/dashboards/19792-cadvisor-dashboard/) — dashboard de comunidad |
+
+#### Navegación: Node Exporter Full (`hardware.json`)
+
+El dashboard es exhaustivo y puede resultar denso. Las secciones más relevantes para el uso habitual:
+
+| Sección | Qué muestra |
+|---|---|
+| **Quick CPU / Mem / Disk** | Fila de stats instantáneos — punto de entrada rápido al estado del host |
+| **Basic CPU / Mem / Net / Disk** | Series temporales de CPU, RAM, red y disco del host con histórico |
+| **AMD GPU (RX 6600)** | Sección añadida: utilización GPU, VRAM usada vs máximo (8 GB), GTT usado vs máximo, temperatura |
+| **Memory Meminfo** | Desglose completo de RAM — útil para diagnóstico de presión de memoria |
+| **Storage Disk** | I/O por dispositivo — latencias de lectura/escritura, throughput |
+
+El resto de secciones (Vmstat, Timesync, Systemd, Netstat, etc.) son para diagnóstico puntual y pueden ignorarse en el uso habitual.
+
+#### Navegación: cAdvisor Dashboard (`cadvisor.json`)
+
+Permite filtrar por `compose_project` y `container_name` desde las variables del dashboard. Secciones más relevantes:
+
+| Sección | Qué muestra |
+|---|---|
+| **misc** | Stats instantáneos del contenedor seleccionado: CPU %, RAM, uptime |
+| **cpu** | Uso de CPU por contenedor a lo largo del tiempo |
+| **memory** | RAM usada, working set (RAM real sin cache), límite configurado |
+| **network** | Tráfico de red entrante y saliente por contenedor |
+| **blkio** | I/O de disco por contenedor |
+
+#### Navegación: Ollama Metrics Dashboard (`ollama.json`)
+
+Dashboard directo, sin necesidad de guía — todos sus paneles son relevantes para el uso habitual (tokens, latencia, tiempo por token, modelos cargados).
 
 ### Etapa 4 — Trazabilidad semántica — modelos locales
 
