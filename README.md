@@ -46,9 +46,10 @@ HOST
 | # | Etapa | Rama | Estado |
 |---|---|---|---|
 | 1 | Métricas de hardware | `feat/hardware-metrics` | Completada |
-| 2 | Métricas de runtime Ollama | `feat/ollama-runtime-metrics` | En progreso |
-| 3 | Trazabilidad semántica — modelos locales | `feat/otel-local` | Pendiente |
-| 4 | Trazabilidad semántica — modelos remotos | `feat/otel-remote-proxy` | Pendiente |
+| 2 | Métricas de runtime Ollama | `feat/ollama-runtime-metrics` | Completada |
+| 3 | Dashboards Grafana | `feat/grafana-dashboards` | Pendiente |
+| 4 | Trazabilidad semántica — modelos locales | `feat/otel-local` | Pendiente |
+| 5 | Trazabilidad semántica — modelos remotos | `feat/otel-remote-proxy` | Pendiente |
 
 ### Etapa 1 — Métricas de hardware
 
@@ -57,7 +58,7 @@ Colección de métricas del host (CPU, RAM, GPU AMD) y desglose por contenedor D
 - **`node_exporter`** (`prom/node-exporter`) con `--collector.drm`: GPU load %, VRAM usada/total, GTT (RAM de sistema en offload), temperatura, frecuencias CPU/GPU, RAM total del host.
 - **`cAdvisor`** (`gcr.io/cadvisor/cadvisor`): CPU y RAM desglosados por contenedor — permite ver qué servicio (ej. `ollama`) está consumiendo qué.
 - Ambos son host-level: cubren este compose y cualquier compose externo actual o futuro sin modificarlos.
-- Granularidad GPU por modelo concreto (qué modelo dentro de Ollama usa cuánta VRAM): esto es información semántica, se captura en Etapa 3 vía OTel.
+- Granularidad GPU por modelo concreto (qué modelo dentro de Ollama usa cuánta VRAM): esto es información semántica, se captura en Etapa 4 vía OTel.
 
 #### Métricas clave disponibles vía node_exporter (AMD RX 6600)
 
@@ -132,7 +133,15 @@ Métricas disponibles:
 
 **Nota:** `ollama_loaded_models`, `ollama_model_loaded` y `ollama_model_ram_mb` se obtienen por polling de `/api/ps` y están disponibles siempre, independientemente de si el tráfico pasa por el proxy.
 
-### Etapa 3 — Trazabilidad semántica — modelos locales
+### Etapa 3 — Dashboards Grafana
+
+Visualización unificada de las métricas de hardware (Etapa 1) y runtime de Ollama (Etapa 2) en Grafana.
+
+- Dashboard de hardware: GPU (utilización, VRAM, GTT, temperatura), CPU y RAM del host.
+- Dashboard de Ollama: modelos cargados, tokens generados, latencia de inferencia, tiempo por token.
+- Provisioning vía ficheros en `grafana/provisioning/` — dashboards como código, sin configuración manual.
+
+### Etapa 4 — Trazabilidad semántica — modelos locales
 
 Captura de trazas OTel de cada llamada de inferencia a modelos locales.
 
@@ -141,13 +150,13 @@ Captura de trazas OTel de cada llamada de inferencia a modelos locales.
 - Atributos por span: prompt, respuesta, modelo, tokens, latencia, coste estimado.
 - Permite diferenciar consumo por modelo concreto (complementa la vista de hardware de Etapa 1).
 
-### Etapa 4 — Trazabilidad semántica — modelos remotos
+### Etapa 5 — Trazabilidad semántica — modelos remotos
 
 Extensión de la capa semántica a APIs remotas (Anthropic, OpenAI).
 
 - Proxy HTTP en este compose (`:8585` Anthropic, `:8586` OpenAI).
 - Intercepta llamadas de agentes locales (Claude Code, Codex), inyecta span OTel y reenvía de forma transparente.
-- Misma UI OpenLIT que Etapa 3 — visión unificada de modelos locales y remotos.
+- Misma UI OpenLIT que Etapa 4 — visión unificada de modelos locales y remotos.
 
 ## Almacenamiento de métricas a largo plazo
 
