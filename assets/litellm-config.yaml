@@ -1,0 +1,22 @@
+model_list:
+  - model_name: "anthropic/*"
+    litellm_params:
+      model: "anthropic/*"
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: "openai/*"
+    litellm_params:
+      model: "openai/*"
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: "ollama/llama3.2:3b"
+    litellm_params:
+      model: "ollama_chat/llama3.2:3b"
+      api_base: http://ollama-metrics:8082
+
+litellm_settings:
+  success_callback: ["otel"]
+  drop_params: true
+
+general_settings:
+  disable_auth: true

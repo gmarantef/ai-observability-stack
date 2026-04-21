@@ -1,56 +1,61 @@
 # ai-observability-stack
 
-Stack de observabilidad self-hosted para runtimes de LLMs locales y remotos — Prometheus + Grafana para métricas de hardware, OpenLIT para trazas semánticas.
+Stack de observabilidad self-hosted para runtimes de LLMs locales y remotos — Prometheus + Grafana para métricas de hardware y runtime, LiteLLM + OpenLIT para trazas semánticas.
 
 ## Visión general
 
-Proyecto Docker Compose independiente que se conecta a cualquier runtime de modelos local e intercepta llamadas API de agentes corriendo en el host. Diseñado para funcionar junto a entornos de modelos separados sin acoplarse a ellos.
+Proyecto Docker Compose independiente que se conecta a cualquier runtime de modelos local e intercepta llamadas API de agentes. Diseñado para funcionar junto a entornos de modelos separados sin acoplarse a ellos.
 
 Dos pipelines independientes:
 
 | Pipeline | Protocolo | Herramientas | Alcance |
 |---|---|---|---|
 | Hardware y runtime | Prometheus scrape | Prometheus + Grafana | Modelos locales |
-| Trazas semánticas | OpenTelemetry | OpenLIT | Modelos locales y remotos |
+| Trazas semánticas | OpenTelemetry | LiteLLM + OpenLIT | Local y remoto |
 
 ## Arquitectura
 
-Dos compose files independientes, cada uno con su propia red Docker:
-
 ```
-HOST
-├── Claude Code ──OTEL_EXPORTER_OTLP_ENDPOINT───┐
-├── Codex ──────────────────────────────────────┤
-│                                               ▼
-│         ┌──────────────────────────────────────────────┐
-│         │   docker-compose.tracing.yml  (red: tracing) │
-│         │  ┌──────────────────────────────────────────┐│
-│         │  │  OpenLIT :3002 (UI + OTel Collector)     ││
-│         │  │    :4317 gRPC  :4318 HTTP                ││
-│         │  └──────────────┬───────────────────────────┘│
-│         │                 │ escribe                    │
-│         │  ┌──────────────▼───────────────────────────┐│
-│         │  │  ClickHouse (interno)                    ││
-│         │  └──────────────────────────────────────────┘│
-│         └──────────────────────────────────────────────┘
+│         ┌──────────────────────────────────────────────────────┐
+│         │  docker-compose.yml            (red: monitoring)     │
+│         │  ┌──────────────┐  ┌────────────────────────────┐   │
+│         │  │  Prometheus  │  │  node-exporter             │   │
+│         │  │  :9090       │  │  cAdvisor                  │   │
+│         │  └──────┬───────┘  │  ollama-metrics :8082      │   │
+│         │         │ pull     └────────────────────────────┘   │
+│         │  ┌──────▼───────┐                                   │
+│         │  │  Grafana     │                                   │
+│         │  │  :3001       │                                   │
+│         │  └──────────────┘                                   │
+│         └──────────────────────────────────────────────────────┘
 │
-│         ┌──────────────────────────────────────────────┐
-│         │   docker-compose.yml        (red: monitoring)│
-│         │  ┌──────────────┐  ┌──────────────────────┐  │
-│         │  │  Prometheus  │  │  node-exporter       │  │
-│         │  │  :9090       │  │  cAdvisor            │  │
-│         │  └──────┬───────┘  │  ollama-metrics      │  │
-│         │         │ pull     └──────────────────────┘  │
-│         │  ┌──────▼───────┐                            │
-│         │  │  Grafana     │                            │
-│         │  │  :3001       │                            │
-│         │  └──────────────┘                            │
-│         └──────────────────────┬───────────────────────┘
-│                      red Docker externa
-│         ┌──────────────────────────────────────────────┐
-│         │  OLLAMA COMPOSE (externo)                    │
-│         │  ollama:11434 ◄─ ollama-metrics:8082 ────────┘
-│         └──────────────────────────────────────────────┘
+│         ┌──────────────────────────────────────────────────────┐
+│         │  docker-compose.tracing.yml  (redes: tracing +       │
+│         │                               monitoring)            │
+│         │  ┌────────────────────────┐                         │
+│         │  │  LiteLLM :8585         │── OTel spans (:4318) ──┐│
+│         │  │  (API OpenAI-compat)   │                        ││
+│         │  └────────────────────────┘                        ││
+│         │  ┌──────────────────────────────────────────────┐  ││
+│         │  │  OpenLIT :3002 (UI + OTel Collector)         │◄─┘│
+│         │  └──────────────┬─────────────────────────────── ┘  │
+│         │  ┌──────────────▼───────────────────────────────┐   │
+│         │  │  ClickHouse (interno, red tracing)           │   │
+│         │  └──────────────────────────────────────────────┘   │
+│         └──────────────────────────────────────────────────────┘
+│
+│         ┌──────────────────────────────────────────────────────┐
+│         │  local-ai-lab compose          (red: monitoring)     │
+│         │                                                      │
+│         │  Open WebUI ──OpenAI API──► litellm:4000             │
+│         │        │                         │ OTel spans        │
+│         │        └────Ollama API──► ollama-metrics:8082        │
+│         │                                  │ Prometheus scrape │
+│         │                           ollama:11434               │
+│         └──────────────────────────────────────────────────────┘
+│
+│  Pipeline métricas:  Open WebUI → ollama-metrics → Ollama → Prometheus → Grafana
+│  Pipeline trazas:    Open WebUI → LiteLLM → ollama-metrics → Ollama → OTel → OpenLIT
 ```
 
 ## Etapas de desarrollo
@@ -61,7 +66,7 @@ HOST
 | 2 | Métricas de runtime Ollama | `feat/ollama-runtime-metrics` | Completada |
 | 3 | Dashboards Grafana | `feat/grafana-dashboards` | Completada |
 | 4 | Trazabilidad semántica — infraestructura OTel | `feat/otel-local` | Completada |
-| 5 | Trazabilidad semántica — proxy para agentes remotos | `feat/otel-remote-proxy` | Pendiente |
+| 5 | Trazabilidad semántica — proxy LiteLLM | `feat/otel-remote-proxy` | Completada |
 
 ### Etapa 1 — Métricas de hardware
 
@@ -194,33 +199,66 @@ Despliegue de la infraestructura de trazabilidad semántica en `docker-compose.t
 - **ClickHouse** — base de datos columnar que almacena las trazas OTel. Solo accesible dentro de la red `tracing`.
 - **OpenLIT** — UI de exploración de trazas + OTel Collector embebido. Recibe spans en `:4317` (gRPC) y `:4318` (HTTP), almacena en ClickHouse y los expone en su UI en `:3002`.
 - Tablas OTel inicializadas en ClickHouse: `otel_traces`, `otel_logs`, `otel_metrics_*`.
-- Para enviar spans al collector, configurar `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` en cualquier agente o aplicación instrumentada.
 
 #### Lección aprendida
 
 La imagen `ghcr.io/openlit/openlit:latest` no incluye `curl` ni `wget`. El healthcheck debe hacerse con `node -e "fetch(...)"` (Node 18+ con fetch nativo).
 
-### Etapa 5 — Trazabilidad semántica — modelos remotos
+### Etapa 5 — Trazabilidad semántica — proxy LiteLLM
 
-Extensión de la capa semántica a APIs remotas (Anthropic, OpenAI).
+Proxy LiteLLM en `docker-compose.tracing.yml` que intercepta las llamadas LLM, genera spans OTel y los envía al collector embebido de OpenLIT.
 
-- Proxy HTTP en este compose (`:8585` Anthropic, `:8586` OpenAI).
-- Intercepta llamadas de agentes locales (Claude Code, Codex), inyecta span OTel y reenvía de forma transparente.
-- Misma UI OpenLIT que Etapa 4 — visión unificada de modelos locales y remotos.
+#### Implementación
+
+LiteLLM expone una API OpenAI-compatible en `:8585`. Los clientes (Open WebUI) se configuran para enviar por esta vía en lugar de llamar directamente a Ollama:
+
+```
+Open WebUI ──OpenAI API──► LiteLLM:4000 ──► ollama-metrics:8082 ──► Ollama
+                                │
+                          OTel spans (HTTP :4318)
+                                │
+                           OpenLIT
+```
+
+La pipeline de métricas Prometheus no se interrumpe: LiteLLM reenvía a `ollama-metrics`, que sigue exponiendo sus métricas al scraper de Prometheus.
+
+#### Configuración del cliente Open WebUI
+
+```yaml
+# en el servicio open-webui del compose local-ai-lab
+environment:
+  - OPENAI_API_BASE_URL=http://litellm:4000/v1
+  - OPENAI_API_KEY=dummy
+```
+
+#### Routing de modelos (`assets/litellm-config.yaml`)
+
+| Prefijo del modelo | Destino | Requisito |
+|---|---|---|
+| `ollama/<model>` | `ollama-metrics:8082` → Ollama | Modelo declarado explícitamente (ver nota) |
+| `anthropic/<model>` | `api.anthropic.com` | `ANTHROPIC_API_KEY` en `.env` |
+| `openai/<model>` | `api.openai.com` | `OPENAI_API_KEY` en `.env` |
+
+**Nota — modelos Ollama:** a diferencia de Anthropic y OpenAI (wildcard `*`), los modelos de Ollama deben declararse individualmente en `litellm-config.yaml`. LiteLLM no descubre los modelos disponibles en Ollama automáticamente — solo expone a Open WebUI los modelos que están definidos en el config. Añadir un nuevo modelo Ollama requiere agregar una entrada y reiniciar LiteLLM (`docker compose -f docker-compose.tracing.yml restart litellm`).
+
+#### Lecciones aprendidas
+
+- El exporter gRPC (`OTEL_EXPORTER=otlp_grpc`) falla con error SSL porque el collector de OpenLIT no tiene TLS. Usar HTTP: `OTEL_EXPORTER=otlp_http`, `OTEL_ENDPOINT=http://openlit:4318`.
+- La imagen de LiteLLM no incluye `curl`. El healthcheck debe usar `python3 -c "import urllib.request; urllib.request.urlopen(...)"`.
+- `ollama-metrics` solo usa `expose` (no `ports`) — no es accesible desde el host. LiteLLM debe estar en la red `monitoring` para alcanzarlo por nombre de contenedor.
+- Open WebUI habla con Ollama en API nativa (no OpenAI-compatible). Para que LiteLLM intercepte, hay que añadirlo como conexión OpenAI separada en Open WebUI — no reemplaza la conexión Ollama existente.
 
 ## Levantar el stack
 
-Los dos compose files son independientes y pueden arrancarse en cualquier orden:
+Los dos compose files son independientes. `docker-compose.yml` debe arrancarse primero porque crea la red `monitoring`.
 
 ```bash
-# Pipeline de métricas (hardware + runtime Ollama)
+# Pipeline de métricas (hardware + runtime Ollama) — crea la red monitoring
 docker compose up -d
 
-# Pipeline de trazabilidad (OpenLIT + ClickHouse)
+# Pipeline de trazabilidad (LiteLLM + OpenLIT + ClickHouse)
 docker compose -f docker-compose.tracing.yml up -d
 ```
-
-Para el pipeline de métricas, este compose debe estar levantado antes que cualquier compose externo (ej. Ollama) que se una a la red `monitoring`.
 
 ## Almacenamiento de métricas a largo plazo
 
@@ -233,50 +271,25 @@ Por defecto Prometheus almacena métricas en local con retención de 15 días �
 
 Postgres vanilla no es una opción viable — el modelo relacional no encaja con series temporales de alta cardinalidad.
 
-## Stack
+## Servicios
 
-- **Prometheus** — scraping de métricas de runtime de Ollama y hardware GPU
-- **Grafana** — visualización de dashboards de hardware y runtime
-- **OpenLIT** — colección de trazas OTel de modelos locales y llamadas remotas vía proxy, incluye su propio OTel Collector
+| Servicio | Compose | Puerto host | Descripción |
+|---|---|---|---|
+| Grafana | `docker-compose.yml` | 3001 | Dashboards de hardware y runtime |
+| Prometheus | `docker-compose.yml` | 9090 | Almacenamiento de métricas |
+| ollama-metrics | `docker-compose.yml` | — | Proxy sidecar Ollama (red `monitoring`) |
+| LiteLLM | `docker-compose.tracing.yml` | 8585 | Proxy LLM + generación de spans OTel |
+| OpenLIT | `docker-compose.tracing.yml` | 3002 | UI de trazas semánticas |
+| OTel Collector (OpenLIT) | `docker-compose.tracing.yml` | 4317 / 4318 | Receptor de spans (gRPC / HTTP) |
+| ClickHouse | `docker-compose.tracing.yml` | — | Storage de trazas (red `tracing`) |
 
 ## Conectar composes externos
 
 `docker-compose.yml` crea y es dueño de la red Docker `monitoring`. Los composes externos se unen a ella:
 
 ```yaml
-# Compose externo (ej. Ollama)
+# Compose externo (ej. Ollama, local-ai-lab)
 networks:
   monitoring:
     external: true
 ```
-
-## Enviar trazas OTel
-
-Cualquier agente o aplicación puede enviar spans al OTel Collector embebido en OpenLIT configurando:
-
-```bash
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318   # HTTP
-# o bien
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317   # gRPC
-```
-
-En Etapa 5 se añadirá un proxy HTTP que intercepta y emite spans de forma transparente para los tres tipos de tráfico LLM:
-
-| Puerto | Destino | Quién lo usa |
-|---|---|---|
-| `:8585` | api.anthropic.com | Claude Code, agentes Anthropic |
-| `:8586` | api.openai.com (compatible) | Codex, agentes OpenAI |
-| `:8587` | ollama:11434 | Open WebUI, agentes locales con Ollama |
-
-Esto unifica en OpenLIT los spans de modelos locales y remotos sin instrumentar los clientes. Para Ollama habrá que decidir si el proxy OTel reemplaza a `ollama-metrics` o si ambos van en cadena (`cliente → proxy OTel → ollama-metrics → ollama`).
-
-## Servicios
-
-| Servicio | Compose | Puerto | Descripción |
-|---|---|---|---|
-| Grafana | `docker-compose.yml` | 3001 | Dashboards de hardware y runtime |
-| Prometheus | `docker-compose.yml` | 9090 | Almacenamiento de métricas |
-| ollama-metrics | `docker-compose.yml` | — | Proxy sidecar de Ollama (red `monitoring`) |
-| OpenLIT | `docker-compose.tracing.yml` | 3002 | UI de trazas semánticas |
-| OTel Collector (OpenLIT) | `docker-compose.tracing.yml` | 4317 / 4318 | Receptor de spans (gRPC / HTTP) |
-| ClickHouse | `docker-compose.tracing.yml` | — | Storage de trazas (red `tracing`) |

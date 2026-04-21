@@ -55,6 +55,36 @@ services:
     networks:
       - tracing
 
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: litellm
+    restart: unless-stopped
+    ports:
+      - "8585:4000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OTEL_EXPORTER=otlp_http
+      - OTEL_ENDPOINT=http://openlit:4318
+      - OTEL_SERVICE_NAME=litellm-proxy
+    volumes:
+      - ./assets/litellm-config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      openlit:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - tracing
+      - monitoring
+
 volumes:
   clickhouse_data:
   openlit_data:
@@ -63,3 +93,5 @@ networks:
   tracing:
     name: tracing
     driver: bridge
+  monitoring:
+    external: true
