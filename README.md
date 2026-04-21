@@ -46,7 +46,7 @@ HOST
 | # | Etapa | Rama | Estado |
 |---|---|---|---|
 | 1 | Métricas de hardware | `feat/hardware-metrics` | Completada |
-| 2 | Métricas de runtime Ollama | `feat/ollama-runtime-metrics` | Pendiente |
+| 2 | Métricas de runtime Ollama | `feat/ollama-runtime-metrics` | En progreso |
 | 3 | Trazabilidad semántica — modelos locales | `feat/otel-local` | Pendiente |
 | 4 | Trazabilidad semántica — modelos remotos | `feat/otel-remote-proxy` | Pendiente |
 
@@ -93,11 +93,42 @@ Todas admiten el label `name` para filtrar por contenedor: `{name="ollama"}`, `{
 
 ### Etapa 2 — Métricas de runtime Ollama
 
-Métricas del propio runtime de Ollama desde su endpoint `/metrics` nativo (`:11434`).
+Métricas del runtime de Ollama instrumentadas vía proxy sidecar.
 
-- Tokens por segundo, latencia de inferencia, modelos cargados en VRAM, cola de requests.
-- Prometheus scrape directo al contenedor `ollama` a través de la red `monitoring`.
-- Depende de Etapa 1 (Prometheus operativo).
+#### Limitación: Ollama no expone un endpoint `/metrics` nativo
+
+Ollama no tiene soporte nativo de Prometheus en ninguna versión actual. El endpoint `/metrics` en `:11434` devuelve 404. Existe un [issue abierto](https://github.com/ollama/ollama/issues/3144) solicitando esta funcionalidad, pero no está implementada.
+
+Opciones evaluadas para obtener métricas de Ollama:
+
+| Opción | Descripción | Decisión |
+|---|---|---|
+| **[ollama-metrics](https://github.com/NorskHelsenett/ollama-metrics)** | Proxy sidecar en Go. Intercepta el tráfico hacia Ollama e instrumenta cada request. También expone métricas de estado (modelos cargados, RAM) via polling de `/api/ps`. | **Elegida** |
+| **[ollama-exporter](https://github.com/frcooper/ollama-exporter)** | Proxy sidecar en Python (FastAPI). Solo instrumenta `/api/chat` y `/api/generate`. | Descartada — cobertura parcial y mayor peso |
+
+#### Implementación
+
+`ollama-metrics` se despliega en este compose y actúa como proxy entre los clientes y Ollama:
+
+```
+Open WebUI → ollama-metrics:8082 → ollama:11434
+                    ↓
+              /metrics (Prometheus)
+```
+
+Métricas disponibles:
+
+| Métrica | Tipo | Descripción |
+|---|---|---|
+| `ollama_loaded_models` | Gauge | Número de modelos cargados en VRAM |
+| `ollama_model_loaded{model}` | Gauge | Estado de carga por modelo |
+| `ollama_model_ram_mb{model}` | Gauge | RAM consumida por modelo (MB) |
+| `ollama_prompt_tokens_total{model}` | Counter | Tokens de prompt procesados |
+| `ollama_generated_tokens_total{model}` | Counter | Tokens generados |
+| `ollama_request_duration_seconds{model}` | Histogram | Duración total del request |
+| `ollama_time_per_token_seconds{model}` | Histogram | Tiempo por token generado |
+
+**Requisito:** los clientes deben apuntar a `ollama-metrics:8082` en vez de a `ollama:11434` directamente. Las métricas de tokens y latencia solo se capturan para el tráfico que pasa por el proxy.
 
 ### Etapa 3 — Trazabilidad semántica — modelos locales
 
