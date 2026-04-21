@@ -45,7 +45,7 @@ HOST
 
 | # | Etapa | Rama | Estado |
 |---|---|---|---|
-| 1 | Métricas de hardware | `feat/hardware-metrics` | En progreso |
+| 1 | Métricas de hardware | `feat/hardware-metrics` | Completada |
 | 2 | Métricas de runtime Ollama | `feat/ollama-runtime-metrics` | Pendiente |
 | 3 | Trazabilidad semántica — modelos locales | `feat/otel-local` | Pendiente |
 | 4 | Trazabilidad semántica — modelos remotos | `feat/otel-remote-proxy` | Pendiente |
@@ -162,7 +162,7 @@ El proxy registra cada request como span OTel en OpenLIT y reenvía de forma tra
 | Servicio | Puerto | Descripción |
 |---|---|---|
 | Grafana | 3001 | Dashboards de hardware y runtime |
-| OpenLIT | 3001 | Explorador de trazas semánticas |
+| OpenLIT | 3002 | Explorador de trazas semánticas |
 | Prometheus | 9090 | Almacenamiento de métricas |
 | Proxy (Anthropic) | 8585 | Intercepta llamadas a la API de Anthropic |
 | Proxy (OpenAI) | 8586 | Intercepta llamadas a APIs compatibles con OpenAI |
