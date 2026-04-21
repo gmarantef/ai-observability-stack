@@ -35,7 +35,7 @@ HOST
 │                  red Docker externa compartida   │
 │         ┌────────────────────────────────────┐  │
 │         │  OLLAMA COMPOSE (externo)          │  │
-│         │  ollama:11434/metrics ─────────────┘  │
+│         │  ollama:11434 ◄─ ollama-metrics ───┘  │
 │         └────────────────────────────────────┘  │
 │                                                  │
 └── proxy reenvía ──→ api.anthropic.com / openai   │
@@ -46,9 +46,10 @@ HOST
 | # | Etapa | Rama | Estado |
 |---|---|---|---|
 | 1 | Métricas de hardware | `feat/hardware-metrics` | Completada |
-| 2 | Métricas de runtime Ollama | `feat/ollama-runtime-metrics` | Pendiente |
-| 3 | Trazabilidad semántica — modelos locales | `feat/otel-local` | Pendiente |
-| 4 | Trazabilidad semántica — modelos remotos | `feat/otel-remote-proxy` | Pendiente |
+| 2 | Métricas de runtime Ollama | `feat/ollama-runtime-metrics` | Completada |
+| 3 | Dashboards Grafana | `feat/grafana-dashboards` | Pendiente |
+| 4 | Trazabilidad semántica — modelos locales | `feat/otel-local` | Pendiente |
+| 5 | Trazabilidad semántica — modelos remotos | `feat/otel-remote-proxy` | Pendiente |
 
 ### Etapa 1 — Métricas de hardware
 
@@ -57,7 +58,7 @@ Colección de métricas del host (CPU, RAM, GPU AMD) y desglose por contenedor D
 - **`node_exporter`** (`prom/node-exporter`) con `--collector.drm`: GPU load %, VRAM usada/total, GTT (RAM de sistema en offload), temperatura, frecuencias CPU/GPU, RAM total del host.
 - **`cAdvisor`** (`gcr.io/cadvisor/cadvisor`): CPU y RAM desglosados por contenedor — permite ver qué servicio (ej. `ollama`) está consumiendo qué.
 - Ambos son host-level: cubren este compose y cualquier compose externo actual o futuro sin modificarlos.
-- Granularidad GPU por modelo concreto (qué modelo dentro de Ollama usa cuánta VRAM): esto es información semántica, se captura en Etapa 3 vía OTel.
+- Granularidad GPU por modelo concreto (qué modelo dentro de Ollama usa cuánta VRAM): esto es información semántica, se captura en Etapa 4 vía OTel.
 
 #### Métricas clave disponibles vía node_exporter (AMD RX 6600)
 
@@ -93,13 +94,54 @@ Todas admiten el label `name` para filtrar por contenedor: `{name="ollama"}`, `{
 
 ### Etapa 2 — Métricas de runtime Ollama
 
-Métricas del propio runtime de Ollama desde su endpoint `/metrics` nativo (`:11434`).
+Métricas del runtime de Ollama instrumentadas vía proxy sidecar.
 
-- Tokens por segundo, latencia de inferencia, modelos cargados en VRAM, cola de requests.
-- Prometheus scrape directo al contenedor `ollama` a través de la red `monitoring`.
-- Depende de Etapa 1 (Prometheus operativo).
+#### Limitación: Ollama no expone un endpoint `/metrics` nativo
 
-### Etapa 3 — Trazabilidad semántica — modelos locales
+Ollama no tiene soporte nativo de Prometheus en ninguna versión actual. El endpoint `/metrics` en `:11434` devuelve 404. Existe un [issue abierto](https://github.com/ollama/ollama/issues/3144) solicitando esta funcionalidad, pero no está implementada.
+
+Opciones evaluadas para obtener métricas de Ollama:
+
+| Opción | Descripción | Decisión |
+|---|---|---|
+| **[ollama-metrics](https://github.com/NorskHelsenett/ollama-metrics)** | Proxy sidecar en Go. Intercepta el tráfico hacia Ollama e instrumenta cada request. También expone métricas de estado (modelos cargados, RAM) via polling de `/api/ps`. | **Elegida** |
+| **[ollama-exporter](https://github.com/frcooper/ollama-exporter)** | Proxy sidecar en Python (FastAPI). Solo instrumenta `/api/chat` y `/api/generate`. | Descartada — cobertura parcial y mayor peso |
+
+#### Implementación
+
+`ollama-metrics` se despliega en este compose y actúa como proxy entre los clientes y Ollama:
+
+```
+Open WebUI → ollama-metrics:8082 → ollama:11434
+                    ↓
+              /metrics (Prometheus)
+```
+
+Métricas disponibles:
+
+| Métrica | Tipo | Descripción |
+|---|---|---|
+| `ollama_loaded_models` | Gauge | Número de modelos cargados en VRAM |
+| `ollama_model_loaded{model}` | Gauge | Estado de carga por modelo |
+| `ollama_model_ram_mb{model}` | Gauge | RAM consumida por modelo (MB) |
+| `ollama_prompt_tokens_total{model}` | Counter | Tokens de prompt procesados |
+| `ollama_generated_tokens_total{model}` | Counter | Tokens generados |
+| `ollama_request_duration_seconds{model}` | Histogram | Duración total del request |
+| `ollama_time_per_token_seconds{model}` | Histogram | Tiempo por token generado |
+
+**Requisito:** los clientes deben apuntar a `ollama-metrics:8082` en vez de a `ollama:11434` directamente. Las métricas de tokens y latencia solo se capturan para el tráfico que pasa por el proxy — peticiones que lleguen directamente a Ollama no quedan instrumentadas.
+
+**Nota:** `ollama_loaded_models`, `ollama_model_loaded` y `ollama_model_ram_mb` se obtienen por polling de `/api/ps` y están disponibles siempre, independientemente de si el tráfico pasa por el proxy.
+
+### Etapa 3 — Dashboards Grafana
+
+Visualización unificada de las métricas de hardware (Etapa 1) y runtime de Ollama (Etapa 2) en Grafana.
+
+- Dashboard de hardware: GPU (utilización, VRAM, GTT, temperatura), CPU y RAM del host.
+- Dashboard de Ollama: modelos cargados, tokens generados, latencia de inferencia, tiempo por token.
+- Provisioning vía ficheros en `grafana/provisioning/` — dashboards como código, sin configuración manual.
+
+### Etapa 4 — Trazabilidad semántica — modelos locales
 
 Captura de trazas OTel de cada llamada de inferencia a modelos locales.
 
@@ -108,13 +150,13 @@ Captura de trazas OTel de cada llamada de inferencia a modelos locales.
 - Atributos por span: prompt, respuesta, modelo, tokens, latencia, coste estimado.
 - Permite diferenciar consumo por modelo concreto (complementa la vista de hardware de Etapa 1).
 
-### Etapa 4 — Trazabilidad semántica — modelos remotos
+### Etapa 5 — Trazabilidad semántica — modelos remotos
 
 Extensión de la capa semántica a APIs remotas (Anthropic, OpenAI).
 
 - Proxy HTTP en este compose (`:8585` Anthropic, `:8586` OpenAI).
 - Intercepta llamadas de agentes locales (Claude Code, Codex), inyecta span OTel y reenvía de forma transparente.
-- Misma UI OpenLIT que Etapa 3 — visión unificada de modelos locales y remotos.
+- Misma UI OpenLIT que Etapa 4 — visión unificada de modelos locales y remotos.
 
 ## Almacenamiento de métricas a largo plazo
 
@@ -164,5 +206,6 @@ El proxy registra cada request como span OTel en OpenLIT y reenvía de forma tra
 | Grafana | 3001 | Dashboards de hardware y runtime |
 | OpenLIT | 3002 | Explorador de trazas semánticas |
 | Prometheus | 9090 | Almacenamiento de métricas |
+| ollama-metrics | — | Proxy sidecar de Ollama, solo accesible dentro de la red `monitoring` |
 | Proxy (Anthropic) | 8585 | Intercepta llamadas a la API de Anthropic |
 | Proxy (OpenAI) | 8586 | Intercepta llamadas a APIs compatibles con OpenAI |

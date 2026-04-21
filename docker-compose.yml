@@ -64,6 +64,21 @@ services:
     networks:
       - monitoring
 
+  ollama-metrics:
+    image: ghcr.io/norskhelsenett/ollama-metrics:latest
+    container_name: ollama-metrics
+    restart: unless-stopped
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - PORT=8082
+    expose:
+      - 8082
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    networks:
+      - monitoring
+
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
