@@ -10,8 +10,8 @@ Dos pipelines independientes:
 
 | Pipeline | Protocolo | Herramientas | Alcance |
 |---|---|---|---|
-| Hardware y runtime | Prometheus scrape | Prometheus + Grafana | Modelos locales |
-| Trazas semánticas | OpenTelemetry | LiteLLM + OpenLIT | Local y remoto |
+| Hardware | Prometheus scrape | Prometheus + Grafana | Host y contenedores |
+| Trazas semánticas | OpenTelemetry | LiteLLM + OpenLIT | Modelos locales y remotos |
 
 ## Arquitectura
 
@@ -21,8 +21,8 @@ Dos pipelines independientes:
 │         │  ┌──────────────┐  ┌────────────────────────────┐   │
 │         │  │  Prometheus  │  │  node-exporter             │   │
 │         │  │  :9090       │  │  cAdvisor                  │   │
-│         │  └──────┬───────┘  │  ollama-metrics :8082      │   │
-│         │         │ pull     └────────────────────────────┘   │
+│         │  └──────┬───────┘  └────────────────────────────┘   │
+│         │         │ pull                                       │
 │         │  ┌──────▼───────┐                                   │
 │         │  │  Grafana     │                                   │
 │         │  │  :3001       │                                   │
@@ -47,15 +47,13 @@ Dos pipelines independientes:
 │         ┌──────────────────────────────────────────────────────┐
 │         │  local-ai-lab compose          (red: monitoring)     │
 │         │                                                      │
-│         │  Open WebUI ──OpenAI API──► litellm:4000             │
-│         │        │                         │ OTel spans        │
-│         │        └────Ollama API──► ollama-metrics:8082        │
-│         │                                  │ Prometheus scrape │
-│         │                           ollama:11434               │
+│         │  Open WebUI ──OpenAI API──► litellm:4000 ──► ollama  │
+│         │                                   │ OTel spans       │
+│         │                              OpenLIT:4318            │
 │         └──────────────────────────────────────────────────────┘
 │
-│  Pipeline métricas:  Open WebUI → ollama-metrics → Ollama → Prometheus → Grafana
-│  Pipeline trazas:    Open WebUI → LiteLLM → ollama-metrics → Ollama → OTel → OpenLIT
+│  Pipeline métricas:  node-exporter / cAdvisor → Prometheus → Grafana
+│  Pipeline trazas:    Open WebUI → LiteLLM → Ollama → OTel → OpenLIT
 ```
 
 ## Etapas de desarrollo
@@ -67,6 +65,7 @@ Dos pipelines independientes:
 | 3 | Dashboards Grafana | `feat/grafana-dashboards` | Completada |
 | 4 | Trazabilidad semántica — infraestructura OTel | `feat/otel-local` | Completada |
 | 5 | Trazabilidad semántica — proxy LiteLLM | `feat/otel-remote-proxy` | Completada |
+| 6 | Eliminación de ollama-metrics | `feature/remove-ollama-metrics` | Completada |
 
 ### Etapa 1 — Métricas de hardware
 
@@ -111,6 +110,8 @@ Todas admiten el label `name` para filtrar por contenedor: `{name="ollama"}`, `{
 
 ### Etapa 2 — Métricas de runtime Ollama
 
+> **Nota:** el proxy `ollama-metrics` desplegado en esta etapa fue eliminado en la Etapa 6. Se documenta aquí por completitud histórica y como registro de la decisión.
+
 Métricas del runtime de Ollama instrumentadas vía proxy sidecar.
 
 #### Limitación: Ollama no expone un endpoint `/metrics` nativo
@@ -121,34 +122,8 @@ Opciones evaluadas para obtener métricas de Ollama:
 
 | Opción | Descripción | Decisión |
 |---|---|---|
-| **[ollama-metrics](https://github.com/NorskHelsenett/ollama-metrics)** | Proxy sidecar en Go. Intercepta el tráfico hacia Ollama e instrumenta cada request. También expone métricas de estado (modelos cargados, RAM) via polling de `/api/ps`. | **Elegida** |
+| **[ollama-metrics](https://github.com/NorskHelsenett/ollama-metrics)** | Proxy sidecar en Go. Intercepta el tráfico hacia Ollama e instrumenta cada request. También expone métricas de estado (modelos cargados, RAM) via polling de `/api/ps`. | **Elegida inicialmente, eliminada en Etapa 6** |
 | **[ollama-exporter](https://github.com/frcooper/ollama-exporter)** | Proxy sidecar en Python (FastAPI). Solo instrumenta `/api/chat` y `/api/generate`. | Descartada — cobertura parcial y mayor peso |
-
-#### Implementación
-
-`ollama-metrics` se despliega en este compose y actúa como proxy entre los clientes y Ollama:
-
-```
-Open WebUI → ollama-metrics:8082 → ollama:11434
-                    ↓
-              /metrics (Prometheus)
-```
-
-Métricas disponibles:
-
-| Métrica | Tipo | Descripción |
-|---|---|---|
-| `ollama_loaded_models` | Gauge | Número de modelos cargados en VRAM |
-| `ollama_model_loaded{model}` | Gauge | Estado de carga por modelo |
-| `ollama_model_ram_mb{model}` | Gauge | RAM consumida por modelo (MB) |
-| `ollama_prompt_tokens_total{model}` | Counter | Tokens de prompt procesados |
-| `ollama_generated_tokens_total{model}` | Counter | Tokens generados |
-| `ollama_request_duration_seconds{model}` | Histogram | Duración total del request |
-| `ollama_time_per_token_seconds{model}` | Histogram | Tiempo por token generado |
-
-**Requisito:** los clientes deben apuntar a `ollama-metrics:8082` en vez de a `ollama:11434` directamente. Las métricas de tokens y latencia solo se capturan para el tráfico que pasa por el proxy — peticiones que lleguen directamente a Ollama no quedan instrumentadas.
-
-**Nota:** `ollama_loaded_models`, `ollama_model_loaded` y `ollama_model_ram_mb` se obtienen por polling de `/api/ps` y están disponibles siempre, independientemente de si el tráfico pasa por el proxy.
 
 ### Etapa 3 — Dashboards Grafana
 
@@ -159,8 +134,9 @@ Visualización unificada en Grafana de las métricas de hardware (Etapa 1) y run
 | Fichero | Título | Origen |
 |---|---|---|
 | `hardware.json` | Node Exporter Full | [rfmoz/grafana-dashboards](https://github.com/rfmoz/grafana-dashboards) (id: 1860) + sección **AMD GPU** añadida |
-| `ollama.json` | Ollama Metrics Dashboard | [NorskHelsenett/ollama-metrics](https://github.com/NorskHelsenett/ollama-metrics) — dashboard oficial del proxy |
 | `cadvisor.json` | cadvisor dashboard | [grafana.com/dashboards/19792](https://grafana.com/grafana/dashboards/19792-cadvisor-dashboard/) — dashboard de comunidad |
+
+> **Nota:** el dashboard `ollama.json` del proxy ollama-metrics fue eliminado en la Etapa 6 junto con el servicio.
 
 #### Navegación: Node Exporter Full (`hardware.json`)
 
@@ -188,10 +164,6 @@ Permite filtrar por `compose_project` y `container_name` desde las variables del
 | **network** | Tráfico de red entrante y saliente por contenedor |
 | **blkio** | I/O de disco por contenedor |
 
-#### Navegación: Ollama Metrics Dashboard (`ollama.json`)
-
-Dashboard directo, sin necesidad de guía — todos sus paneles son relevantes para el uso habitual (tokens, latencia, tiempo por token, modelos cargados).
-
 ### Etapa 4 — Trazabilidad semántica — infraestructura OTel
 
 Despliegue de la infraestructura de trazabilidad semántica en `docker-compose.tracing.yml`, independiente del pipeline de métricas.
@@ -213,14 +185,12 @@ Proxy LiteLLM en `docker-compose.tracing.yml` que intercepta las llamadas LLM, g
 LiteLLM expone una API OpenAI-compatible en `:8585`. Los clientes (Open WebUI) se configuran para enviar por esta vía en lugar de llamar directamente a Ollama:
 
 ```
-Open WebUI ──OpenAI API──► LiteLLM:4000 ──► ollama-metrics:8082 ──► Ollama
+Open WebUI ──OpenAI API──► LiteLLM:4000 ──► Ollama:11434
                                 │
                           OTel spans (HTTP :4318)
                                 │
                            OpenLIT
 ```
-
-La pipeline de métricas Prometheus no se interrumpe: LiteLLM reenvía a `ollama-metrics`, que sigue exponiendo sus métricas al scraper de Prometheus.
 
 #### Configuración del cliente Open WebUI
 
@@ -235,7 +205,7 @@ environment:
 
 | Prefijo del modelo | Destino | Requisito |
 |---|---|---|
-| `ollama/<model>` | `ollama-metrics:8082` → Ollama | Modelo declarado explícitamente |
+| `ollama/<model>` | `ollama:11434` | Modelo declarado explícitamente |
 | `gemini/<model>` | `generativelanguage.googleapis.com` | `GEMINI_API_KEY` en `.env` |
 
 **Nota — declaración explícita de modelos:** todos los modelos deben declararse individualmente en `litellm-config.yaml` para que aparezcan en Open WebUI. LiteLLM no hace autodiscovery — solo expone los modelos definidos en el config. Añadir un modelo nuevo requiere agregar una entrada y recrear el contenedor (`docker compose -f docker-compose.tracing.yml up -d --force-recreate litellm`).
@@ -246,8 +216,17 @@ environment:
 
 - El exporter gRPC (`OTEL_EXPORTER=otlp_grpc`) falla con error SSL porque el collector de OpenLIT no tiene TLS. Usar HTTP: `OTEL_EXPORTER=otlp_http`, `OTEL_ENDPOINT=http://openlit:4318`.
 - La imagen de LiteLLM no incluye `curl`. El healthcheck debe usar `python3 -c "import urllib.request; urllib.request.urlopen(...)"`.
-- `ollama-metrics` solo usa `expose` (no `ports`) — no es accesible desde el host. LiteLLM debe estar en la red `monitoring` para alcanzarlo por nombre de contenedor.
 - Open WebUI habla con Ollama en API nativa (no OpenAI-compatible). Para que LiteLLM intercepte, hay que añadirlo como conexión OpenAI separada en Open WebUI — no reemplaza la conexión Ollama existente.
+
+### Etapa 6 — Eliminación de ollama-metrics
+
+El proxy `ollama-metrics` fue eliminado tras completar la Etapa 5. La única métrica de valor que aportaba de forma exclusiva era `ollama_model_ram_mb` (memoria ocupada por modelos cargados). Al verificar el endpoint `/api/ps` de Ollama directamente se confirmó que `size == size_vram` — el modelo carga íntegro en VRAM, no en RAM — y que por tanto `node_drm_memory_vram_used_bytes` (node-exporter DRM) ya refleja esa información con mayor fidelidad. El resto de métricas (tokens, latencia) estaban cubiertas con mayor detalle semántico por LiteLLM + OpenLIT. Ver [notes/remove-ollama-metrics.md](notes/remove-ollama-metrics.md).
+
+Cambios aplicados:
+- Servicio `ollama-metrics` eliminado de `docker-compose.yml`
+- Job `ollama-metrics` eliminado del scrape de Prometheus
+- Dashboard `ollama.json` eliminado de Grafana
+- `litellm-config.yaml`: `api_base` pasa de `ollama-metrics:8082` a `ollama:11434`
 
 ## Levantar el stack
 
@@ -276,9 +255,10 @@ Postgres vanilla no es una opción viable — el modelo relacional no encaja con
 
 | Servicio | Compose | Puerto host | Descripción |
 |---|---|---|---|
-| Grafana | `docker-compose.yml` | 3001 | Dashboards de hardware y runtime |
+| Grafana | `docker-compose.yml` | 3001 | Dashboards de hardware y contenedores |
 | Prometheus | `docker-compose.yml` | 9090 | Almacenamiento de métricas |
-| ollama-metrics | `docker-compose.yml` | — | Proxy sidecar Ollama (red `monitoring`) |
+| node-exporter | `docker-compose.yml` | — | Métricas de hardware del host (GPU, RAM, CPU) |
+| cAdvisor | `docker-compose.yml` | — | Métricas de CPU/RAM por contenedor |
 | LiteLLM | `docker-compose.tracing.yml` | 8585 | Proxy LLM + generación de spans OTel |
 | OpenLIT | `docker-compose.tracing.yml` | 3002 | UI de trazas semánticas |
 | OTel Collector (OpenLIT) | `docker-compose.tracing.yml` | 4317 / 4318 | Receptor de spans (gRPC / HTTP) |
