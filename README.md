@@ -235,11 +235,12 @@ environment:
 
 | Prefijo del modelo | Destino | Requisito |
 |---|---|---|
-| `ollama/<model>` | `ollama-metrics:8082` → Ollama | Modelo declarado explícitamente (ver nota) |
-| `anthropic/<model>` | `api.anthropic.com` | `ANTHROPIC_API_KEY` en `.env` |
-| `openai/<model>` | `api.openai.com` | `OPENAI_API_KEY` en `.env` |
+| `ollama/<model>` | `ollama-metrics:8082` → Ollama | Modelo declarado explícitamente |
+| `gemini/<model>` | `generativelanguage.googleapis.com` | `GEMINI_API_KEY` en `.env` |
 
-**Nota — modelos Ollama:** a diferencia de Anthropic y OpenAI (wildcard `*`), los modelos de Ollama deben declararse individualmente en `litellm-config.yaml`. LiteLLM no descubre los modelos disponibles en Ollama automáticamente — solo expone a Open WebUI los modelos que están definidos en el config. Añadir un nuevo modelo Ollama requiere agregar una entrada y reiniciar LiteLLM (`docker compose -f docker-compose.tracing.yml restart litellm`).
+**Nota — declaración explícita de modelos:** todos los modelos deben declararse individualmente en `litellm-config.yaml` para que aparezcan en Open WebUI. LiteLLM no hace autodiscovery — solo expone los modelos definidos en el config. Añadir un modelo nuevo requiere agregar una entrada y recrear el contenedor (`docker compose -f docker-compose.tracing.yml up -d --force-recreate litellm`).
+
+**Nota — Open WebUI genera llamadas adicionales:** por cada mensaje del usuario, Open WebUI genera llamadas LLM automáticas adicionales que pasan por LiteLLM. En el primer mensaje de un chat se añaden hasta 3 (título, tags y sugerencias de continuación); en mensajes sucesivos sobre el mismo chat, 1 (solo sugerencias de continuación). Es comportamiento esperado, no errores de la pipeline.
 
 #### Lecciones aprendidas
 

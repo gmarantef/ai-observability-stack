@@ -62,8 +62,7 @@ services:
     ports:
       - "8585:4000"
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
       - OTEL_EXPORTER=otlp_http
       - OTEL_ENDPOINT=http://openlit:4318
       - OTEL_SERVICE_NAME=litellm-proxy
