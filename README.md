@@ -34,8 +34,7 @@ WebUI. La arquitectura es agnóstica al proveedor, LiteLLM soporta más de
         └──────────────────────────────────────────────────────┘
 
         ┌──────────────────────────────────────────────────────┐
-        │  docker-compose.tracing.yml  (redes: tracing +       │
-        │                               monitoring)            │
+        │  docker-compose.tracing.yml  (red: tracing)          │
         │  ┌────────────────────────┐                          │
         │  │  LiteLLM :8585         │── OTel spans (:4318) ──┐ │
         │  │  (API OpenAI-compat)   │                        │ │
@@ -149,13 +148,13 @@ métricas quedaron cubiertas con mayor detalle por LiteLLM + OpenLIT.
 
 ## Levantar el stack
 
-`docker-compose.yml` debe arrancarse primero, es quien crea la red `monitoring`.
+Orden de arranque obligatorio: primero el stack de métricas (crea `monitoring`), luego el de trazas (crea `tracing`), luego los composes externos.
 
 ```bash
-# Pipeline de métricas (crea la red monitoring)
+# Stack de métricas (crea la red monitoring)
 docker compose up -d
 
-# Pipeline de trazabilidad
+# Stack de trazas (crea la red tracing)
 docker compose -f docker-compose.tracing.yml up -d
 ```
 
@@ -163,18 +162,17 @@ docker compose -f docker-compose.tracing.yml up -d
 
 ### Integrar tu entorno externo
 
-`docker-compose.yml` crea y es dueño de la red `monitoring`. Los composes
-externos se unen a ella para que sus servicios sean alcanzables por nombre
-desde LiteLLM y Prometheus:
+Para que las llamadas LLM generen trazas en OpenLIT, el cliente debe apuntar
+a LiteLLM en lugar de llamar directamente al modelo. Los servicios que necesiten
+comunicarse con LiteLLM u Ollama deben unirse a la red `tracing`:
 
 ```yaml
 networks:
-  monitoring:
+  tracing:
     external: true
 ```
 
-Para que las llamadas LLM generen trazas en OpenLIT, el cliente debe apuntar
-a LiteLLM en lugar de llamar directamente al modelo. Ejemplo con Open WebUI:
+Ejemplo con Open WebUI:
 
 ```yaml
 open-webui:
@@ -184,12 +182,10 @@ open-webui:
     - OPENAI_API_KEY=sk-local
   networks:
     - ai-lab
-    - monitoring   # necesaria para resolver litellm por nombre
+    - tracing   # necesaria para resolver litellm por nombre
 ```
 
-El nombre `litellm` es resolvible porque ambos servicios comparten la red
-`monitoring`. `OPENAI_API_KEY` puede ser cualquier valor — LiteLLM no la
-valida en local.
+`OPENAI_API_KEY` puede ser cualquier valor, LiteLLM no la valida en local.
 
 El mismo patrón aplica a cualquier cliente con soporte para API
 OpenAI-compatible: agentes LangChain, LlamaIndex, scripts con `openai` SDK, etc.
