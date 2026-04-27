@@ -9,6 +9,26 @@ model_list:
       model: "ollama_chat/llama3.2:3b"
       api_base: http://ollama:11434
 
+  - model_name: "ollama/llama3.1:8b"
+    litellm_params:
+      model: "ollama_chat/llama3.1:8b"
+      api_base: http://ollama:11434
+
+  - model_name: "ollama/qwen2.5:7b"
+    litellm_params:
+      model: "ollama_chat/qwen2.5:7b"
+      api_base: http://ollama:11434
+
+  - model_name: "ollama/qwen2.5-coder:7b"
+    litellm_params:
+      model: "ollama_chat/qwen2.5-coder:7b"
+      api_base: http://ollama:11434
+
+  - model_name: "ollama/qwen2.5:14b"
+    litellm_params:
+      model: "ollama_chat/qwen2.5:14b"
+      api_base: http://ollama:11434
+
 litellm_settings:
   success_callback: ["otel"]
   failure_callback: ["otel"]
