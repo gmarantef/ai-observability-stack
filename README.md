@@ -2,7 +2,7 @@
 
 Stack de observabilidad self-hosted para runtimes de LLMs locales y remotos.
 Métricas de hardware vía Prometheus + Grafana, trazabilidad semántica vía
-LiteLLM + OpenLIT.
+LiteLLM + OTel Collector + Grafana.
 
 ## Visión general
 
@@ -11,7 +11,8 @@ runtime de modelos e interceptar llamadas API sin acoplarse al entorno
 subyacente.
 
 Dos pipelines corren en paralelo de forma independiente: uno para métricas de
-hardware y contenedores, otro para trazas semánticas de llamadas LLM.
+hardware y contenedores, otro para trazas semánticas de llamadas LLM. Ambos
+convergen en Grafana como punto único de visualización.
 
 Probado con Ollama (local, AMD RX 6600) y Google Gemini (remoto) vía Open
 WebUI. La arquitectura es agnóstica al proveedor, LiteLLM soporta más de
@@ -20,43 +21,49 @@ WebUI. La arquitectura es agnóstica al proveedor, LiteLLM soporta más de
 ## Arquitectura
 
 ```
-        ┌──────────────────────────────────────────────────────┐
-        │  docker-compose.yml            (red: monitoring)     │
-        │  ┌──────────────┐  ┌────────────────────────────┐    │
-        │  │  Prometheus  │  │  node-exporter             │    │
-        │  │  :9090       │<─│  cAdvisor                  │    │
-        │  └──────┬───────┘  └────────────────────────────┘    │
-        │         │ pull                                       │
-        │  ┌──────▼───────┐                                    │
-        │  │  Grafana     │                                    │
-        │  │  :3001       │                                    │
-        │  └──────────────┘                                    │
-        └──────────────────────────────────────────────────────┘
-
-        ┌──────────────────────────────────────────────────────┐
-        │  docker-compose.tracing.yml  (red: tracing)          │
-        │  ┌────────────────────────┐                          │
-        │  │  LiteLLM :8585         │── OTel spans (:4318) ──┐ │
-        │  │  (API OpenAI-compat)   │                        │ │
-        │  └────────────────────────┘                        │ │
-        │  ┌──────────────────────────────────────────────┐  │ │
-        │  │  OpenLIT :3002 (UI + OTel Collector)         │<─┘ │
-        │  └──────────────┬───────────────────────────────┘    │
-        │  ┌──────────────▼───────────────────────────────┐    │
-        │  │  ClickHouse (interno, red tracing)           │    │
-        │  └──────────────────────────────────────────────┘    │
-        └──────────────────────────────────────────────────────┘
-
-        ┌──────────────────────────────────────────────────────┐
-        │  compose externo (ej. local-ai-lab)                  │
-        │                                                      │
-        │  Open WebUI ──OpenAI API──> LiteLLM ──> Ollama       │
-        │                                 │ OTel spans         │
-        │                            OpenLIT:4318              │
-        └──────────────────────────────────────────────────────┘
-
-  Pipeline métricas:  node-exporter / cAdvisor → Prometheus → Grafana
-  Pipeline trazas:    cliente → LiteLLM → modelo → OTel → OpenLIT
+HOST
+│
+│  ┌─────────────────────────────────────────────────────────────────┐
+│  │  docker-compose.yml  ·  red: observability                     │
+│  │                                                                  │
+│  │  ┌─────────────┐   ┌────────────────┐   ┌───────────────────┐  │
+│  │  │  Prometheus │   │   ClickHouse   │   │  OTel Collector   │  │
+│  │  │  :9090      │   │   (interno)    │   │  :4317 / :4318    │  │
+│  │  └──────┬──────┘   └───────▲────────┘   └─────────▲─────────┘  │
+│  │         │ pull             │ escribe               │ recibe     │
+│  │  ┌──────▼──────────────────┴───────────────────────┘           │
+│  │  │   Grafana :3001                                              │
+│  │  │   datasources: Prometheus · ClickHouse                      │
+│  │  └──────────────────────────────────────────────────────────────┘│
+│  └─────────────────────────────────────────────────────────────────┘
+│
+│  ┌─────────────────────────────────────────────────────────────────┐
+│  │  docker-compose.exporters.yml  ·  include: core                │
+│  │                                                                  │
+│  │  ┌─────────────────────────────────────────────────────────┐   │
+│  │  │  node-exporter · cAdvisor          → red observability  │   │
+│  │  └─────────────────────────────────────────────────────────┘   │
+│  └─────────────────────────────────────────────────────────────────┘
+│
+│  ┌─────────────────────────────────────────────────────────────────┐
+│  │  docker-compose.ai.yml  ·  include: exporters                  │
+│  │                                                                  │
+│  │  ┌──────────────────┐                                           │
+│  │  │  LiteLLM :8585   │─── OTel spans HTTP :4318 ──► otelcol    │
+│  │  └────────┬─────────┘    (vía red observability)               │
+│  │           │ API OpenAI-compatible (red inference)               │
+│  │  red propia: inference                                          │
+│  └───────────┼───────────────────────────────────────────────────── ┘
+│              │
+│  ┌───────────┼─────────────────────────────────────────────────────┐
+│  │  compose externo (ej. local-ai-lab)  ·  se une a: inference    │
+│  │           │                                                      │
+│  │  Open WebUI ──OpenAI API──► litellm:4000                        │
+│  │  Ollama ──────────────────► litellm (modelos ollama/*)          │
+│  └─────────────────────────────────────────────────────────────────┘
+│
+│  Pipeline métricas:  node-exporter / cAdvisor → Prometheus → Grafana
+│  Pipeline trazas:    LiteLLM → OTel Collector → ClickHouse → Grafana
 ```
 
 ## Stack
@@ -66,23 +73,22 @@ WebUI. La arquitectura es agnóstica al proveedor, LiteLLM soporta más de
 | [node-exporter](https://github.com/prometheus/node_exporter) | Colección | Métricas del host: CPU, RAM, GPU (vía DRM) |
 | [cAdvisor](https://github.com/google/cadvisor) | Colección | Métricas por contenedor: CPU y RAM |
 | [Prometheus](https://prometheus.io/) | Almacenamiento | Scrape y retención de series temporales |
-| [Grafana](https://grafana.com/) | Visualización | Dashboards de hardware y contenedores |
-| [LiteLLM](https://github.com/BerriAI/litellm) | Proxy LLM | API OpenAI-compatible; genera spans OTel por llamada |
 | [ClickHouse](https://clickhouse.com/) | Almacenamiento | Base de datos columnar para trazas OTel |
-| [OpenLIT](https://github.com/openlit/openlit) | Trazabilidad | UI de trazas semánticas + OTel Collector embebido |
+| [OTel Collector](https://opentelemetry.io/docs/collector/) | Colección | Receptor de spans OTLP; escribe en ClickHouse |
+| [LiteLLM](https://github.com/BerriAI/litellm) | Proxy LLM | API OpenAI-compatible; genera spans OTel por llamada |
+| [Grafana](https://grafana.com/) | Visualización | Dashboards de métricas y trazas LLM centralizados |
 
 ## Servicios
 
 | Servicio | Compose | Puerto host | Descripción |
 |---|---|---|---|
-| Grafana | `docker-compose.yml` | 3001 | Dashboards de hardware y contenedores |
+| Grafana | `docker-compose.yml` | 3001 | Visualización centralizada (métricas + trazas LLM) |
 | Prometheus | `docker-compose.yml` | 9090 | Almacenamiento de métricas |
-| node-exporter | `docker-compose.yml` | — | Métricas de hardware del host |
-| cAdvisor | `docker-compose.yml` | — | Métricas por contenedor |
-| LiteLLM | `docker-compose.tracing.yml` | 8585 | Proxy LLM + generación de spans OTel |
-| OpenLIT | `docker-compose.tracing.yml` | 3002 | UI de trazas semánticas |
-| OTel Collector (OpenLIT) | `docker-compose.tracing.yml` | 4317 / 4318 | Receptor de spans (gRPC / HTTP) |
-| ClickHouse | `docker-compose.tracing.yml` | — | Storage de trazas (red interna `tracing`) |
+| ClickHouse | `docker-compose.yml` | — | Storage de trazas OTel (red interna) |
+| OTel Collector | `docker-compose.yml` | 4317 / 4318 | Receptor de spans (gRPC / HTTP) |
+| node-exporter | `docker-compose.exporters.yml` | — | Métricas de hardware del host |
+| cAdvisor | `docker-compose.exporters.yml` | — | Métricas por contenedor |
+| LiteLLM | `docker-compose.ai.yml` | 8585 | Proxy LLM + generación de spans OTel |
 
 ## Métricas principales
 
@@ -106,69 +112,62 @@ según el sistema, verificar con `node_drm_card_info`.
 
 ### Contenedores — cAdvisor
 
-Todas las métricas admiten el label `name` para filtrar por contenedor:
-`{name="ollama"}`.
+Todas las métricas admiten el label `name` para filtrar por contenedor.
 
 | Métrica | Descripción |
 |---|---|
 | `rate(container_cpu_usage_seconds_total[1m])` | Uso de CPU por contenedor |
-| `container_memory_working_set_bytes` | RAM real en uso (excluye cache — mejor indicador de presión) |
+| `container_memory_working_set_bytes` | RAM real en uso (excluye cache) |
 | `container_memory_limit_bytes` | Límite de RAM configurado |
 | `rate(container_network_receive_bytes_total[1m])` | Tráfico de red entrante por contenedor |
 | `rate(container_network_transmit_bytes_total[1m])` | Tráfico de red saliente por contenedor |
 
-### Trazas semánticas — OpenLIT
+### Trazas semánticas LLM — Grafana + ClickHouse
 
-Las trazas se exploran desde la UI de OpenLIT (`:3002`), no vía PromQL. Cada
-span generado por LiteLLM incluye:
+Las trazas se visualizan en Grafana (`:3001`) mediante el datasource ClickHouse.
+Cada span generado por LiteLLM incluye:
 
-| Atributo | Descripción |
+| Atributo OTel | Descripción |
 |---|---|
-| `gen_ai.usage.input_tokens` | Tokens del prompt |
-| `gen_ai.usage.output_tokens` | Tokens de la respuesta |
-| `gen_ai.usage.total_tokens` | Total de tokens consumidos |
 | `gen_ai.request.model` | Modelo invocado |
-| `gen_ai.response.finish_reason` | Motivo de finalización (`stop`, `length`, etc.) |
-| Duración del span | Latencia de extremo a extremo de la llamada LLM |
-| `gen_ai.usage.cost` | Coste estimado (aplica a modelos remotos con pricing conocido) |
+| `gen_ai.usage.prompt_tokens` | Tokens del prompt |
+| `gen_ai.usage.completion_tokens` | Tokens de la respuesta |
+| `gen_ai.usage.total_tokens` | Total de tokens consumidos |
+| `Duration` | Latencia de extremo a extremo (nanosegundos) |
 
-## Etapas de desarrollo
-
-| # | Etapa | Estado |
-|---|---|---|
-| 1 | Métricas de hardware — node-exporter + cAdvisor + Prometheus | Completada |
-| 2 | Métricas de runtime Ollama — proxy sidecar ollama-metrics | Completada |
-| 3 | Dashboards Grafana — hardware, cAdvisor | Completada |
-| 4 | Infraestructura OTel — ClickHouse + OpenLIT | Completada |
-| 5 | Proxy LiteLLM — trazabilidad semántica local y remota | Completada |
-| 6 | Simplificación — eliminación del proxy ollama-metrics | Completada |
-
-La Etapa 2 (proxy ollama-metrics) fue explorada y descartada en la Etapa 6 — sus
-métricas quedaron cubiertas con mayor detalle por LiteLLM + OpenLIT.
+Los spans se almacenan en la tabla `otel_traces` de ClickHouse y son consultables
+mediante SQL estándar desde Grafana.
 
 ## Levantar el stack
 
-Orden de arranque obligatorio: primero el stack de métricas (crea `monitoring`), luego el de trazas (crea `tracing`), luego los composes externos.
+Los composes se encadenan mediante `include`. Cada capa superior levanta
+automáticamente las inferiores.
 
 ```bash
-# Stack de métricas (crea la red monitoring)
+# Solo el core de observabilidad
 docker compose up -d
 
-# Stack de trazas (crea la red tracing)
-docker compose -f docker-compose.tracing.yml up -d
+# Core + exporters de infraestructura (node-exporter, cAdvisor)
+docker compose -f docker-compose.exporters.yml up -d
+
+# Stack completo — core + exporters + proxy LLM
+docker compose -f docker-compose.ai.yml up -d
 ```
+
+Levantar `docker-compose.ai.yml` antes que los composes externos es obligatorio
+— es quien crea la red `inference` que los composes externos necesitan unirse.
 
 ## Adaptar a tu entorno
 
 ### Integrar tu entorno externo
 
-Para que las llamadas LLM generen trazas en OpenLIT, el cliente debe apuntar
-a LiteLLM en lugar de llamar directamente al modelo. Los servicios que necesiten
-comunicarse con LiteLLM u Ollama deben unirse a la red `tracing`:
+Para que las llamadas LLM generen trazas en Grafana, el cliente debe enrutar
+las peticiones a través de LiteLLM. Los servicios que necesiten comunicarse
+con LiteLLM u Ollama deben unirse a la red `inference`:
 
 ```yaml
 networks:
-  tracing:
+  inference:
     external: true
 ```
 
@@ -178,11 +177,11 @@ Ejemplo con Open WebUI:
 open-webui:
   image: ghcr.io/open-webui/open-webui:main
   environment:
-    - OPENAI_API_BASE_URL=http://litellm:4000
+    - OPENAI_API_BASE_URL=http://litellm:4000/v1
     - OPENAI_API_KEY=sk-local
   networks:
     - ai-lab
-    - tracing   # necesaria para resolver litellm por nombre
+    - inference   # necesaria para resolver litellm y ollama por nombre
 ```
 
 `OPENAI_API_KEY` puede ser cualquier valor, LiteLLM no la valida en local.
@@ -192,18 +191,18 @@ OpenAI-compatible: agentes LangChain, LlamaIndex, scripts con `openai` SDK, etc.
 
 ### Modelos en LiteLLM
 
-LiteLLM no hace autodiscovery, cada modelo debe declararse explícitamente en
+LiteLLM no hace autodiscovery; cada modelo debe declararse explícitamente en
 `assets/litellm-config.yaml`. Añadir un modelo nuevo requiere una entrada y
 recrear el contenedor:
 
 ```bash
-docker compose -f docker-compose.tracing.yml up -d --force-recreate litellm
+docker compose -f docker-compose.ai.yml up -d --force-recreate litellm
 ```
 
 ### Proveedores remotos
 
 Añadir la API key al fichero `.env` (ver `.env.example`) y declarar el modelo
-en `litellm-config.yaml`. Proveedores soportados por [LiteLLM](https://docs.litellm.ai/docs/providers).
+en `litellm-config.yaml`. Proveedores soportados: [docs LiteLLM](https://docs.litellm.ai/docs/providers).
 
 ### GPU
 
