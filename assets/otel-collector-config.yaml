@@ -1,3 +1,7 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
 receivers:
   otlp:
     protocols:
@@ -15,10 +19,10 @@ processors:
 
 exporters:
   clickhouse:
-    endpoint: tcp://${env:INIT_DB_HOST}:9000?dial_timeout=10s
-    database: ${env:INIT_DB_DATABASE}
-    username: ${env:INIT_DB_USERNAME}
-    password: ${env:INIT_DB_PASSWORD}
+    endpoint: tcp://${env:CLICKHOUSE_HOST}:9000?dial_timeout=10s
+    database: ${env:CLICKHOUSE_DATABASE}
+    username: ${env:CLICKHOUSE_USER}
+    password: ${env:CLICKHOUSE_PASSWORD}
     ttl: 730h
     logs_table_name: otel_logs
     traces_table_name: otel_traces
@@ -30,6 +34,7 @@ exporters:
       max_elapsed_time: 300s
 
 service:
+  extensions: [health_check]
   pipelines:
     logs:
       receivers: [otlp]

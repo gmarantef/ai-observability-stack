@@ -19,50 +19,7 @@ services:
       retries: 5
       start_period: 15s
     networks:
-      - monitoring
-
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: node-exporter
-    restart: unless-stopped
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - "--path.procfs=/host/proc"
-      - "--path.sysfs=/host/sys"
-      - "--path.rootfs=/rootfs"
-      - "--collector.drm"
-      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
-    expose:
-      - 9100
-    depends_on:
-      prometheus:
-        condition: service_healthy
-    networks:
-      - monitoring
-
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
-    container_name: cadvisor
-    restart: unless-stopped
-    privileged: true
-    devices:
-      - /dev/kmsg
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker:/var/lib/docker:ro
-      - /dev/disk:/dev/disk:ro
-    expose:
-      - 8080
-    depends_on:
-      prometheus:
-        condition: service_healthy
-    networks:
-      - monitoring
+      - observability
 
   grafana:
     image: grafana/grafana:latest
@@ -73,6 +30,10 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana
@@ -80,13 +41,60 @@ services:
       prometheus:
         condition: service_healthy
     networks:
-      - monitoring
+      - observability
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.4.1
+    container_name: clickhouse
+    restart: unless-stopped
+    environment:
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB}
+      - CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS=true
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./assets/clickhouse-config.xml:/etc/clickhouse-server/config.d/custom-config.xml:ro
+      - ./assets/clickhouse-init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    expose:
+      - "9000"
+      - "8123"
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user=$${CLICKHOUSE_USER} --password=$${CLICKHOUSE_PASSWORD} --query='SELECT 1' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 100s
+    networks:
+      - observability
+
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otelcol
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+    volumes:
+      - ./assets/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    networks:
+      - observability
 
 volumes:
   prometheus_data:
   grafana_data:
+  clickhouse_data:
 
 networks:
-  monitoring:
-    name: monitoring
+  observability:
+    name: observability
     driver: bridge

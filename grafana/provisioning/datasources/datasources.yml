@@ -8,3 +8,18 @@ datasources:
     access: proxy
     isDefault: true
     editable: false
+
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    uid: clickhouse
+    access: proxy
+    editable: false
+    jsonData:
+      host: clickhouse
+      port: 9000
+      protocol: native
+      username: ${CLICKHOUSE_USER}
+      defaultDatabase: ${CLICKHOUSE_DB}
+      secure: false
+    secureJsonData:
+      password: ${CLICKHOUSE_PASSWORD}
