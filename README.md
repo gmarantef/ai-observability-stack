@@ -23,44 +23,44 @@ WebUI. La arquitectura es agnóstica al proveedor, LiteLLM soporta más de
 ```
 HOST
 │
-│  ┌─────────────────────────────────────────────────────────────────┐
+│  ┌────────────────────────────────────────────────────────────────┐
 │  │  docker-compose.yml  ·  red: observability                     │
-│  │                                                                  │
+│  │                                                                │
 │  │  ┌─────────────┐   ┌────────────────┐   ┌───────────────────┐  │
 │  │  │  Prometheus │   │   ClickHouse   │   │  OTel Collector   │  │
 │  │  │  :9090      │   │   (interno)    │   │  :4317 / :4318    │  │
 │  │  └──────┬──────┘   └───────▲────────┘   └─────────▲─────────┘  │
-│  │         │ pull             │ escribe               │ recibe     │
-│  │  ┌──────▼──────────────────┴───────────────────────┘           │
-│  │  │   Grafana :3001                                              │
-│  │  │   datasources: Prometheus · ClickHouse                      │
-│  │  └──────────────────────────────────────────────────────────────┘│
-│  └─────────────────────────────────────────────────────────────────┘
+│  │         │ pull             │ escribe              │ recibe     │
+│  │  ┌──────▼──────────────────┴──────────────────────┘            │
+│  │  │   Grafana :3001                                |            │
+│  │  │   datasources: Prometheus · ClickHouse         |            │
+│  │  └────────────────────────────────────────────────┘            │
+│  └────────────────────────────────────────────────────────────────┘
 │
-│  ┌─────────────────────────────────────────────────────────────────┐
+│  ┌────────────────────────────────────────────────────────────────┐
 │  │  docker-compose.exporters.yml  ·  include: core                │
-│  │                                                                  │
+│  │                                                                │
 │  │  ┌─────────────────────────────────────────────────────────┐   │
 │  │  │  node-exporter · cAdvisor          → red observability  │   │
 │  │  └─────────────────────────────────────────────────────────┘   │
-│  └─────────────────────────────────────────────────────────────────┘
+│  └────────────────────────────────────────────────────────────────┘
 │
-│  ┌─────────────────────────────────────────────────────────────────┐
+│  ┌────────────────────────────────────────────────────────────────┐
 │  │  docker-compose.ai.yml  ·  include: exporters                  │
-│  │                                                                  │
-│  │  ┌──────────────────┐                                           │
-│  │  │  LiteLLM :8585   │─── OTel spans HTTP :4318 ──► otelcol    │
+│  │                                                                │
+│  │  ┌──────────────────┐                                          │
+│  │  │  LiteLLM :8585   │─── OTel spans HTTP :4318 ──> otelcol     │
 │  │  └────────┬─────────┘    (vía red observability)               │
-│  │           │ API OpenAI-compatible (red inference)               │
-│  │  red propia: inference                                          │
-│  └───────────┼───────────────────────────────────────────────────── ┘
+│  │           │ API OpenAI-compatible (red inference)              │
+│  │  red propia: inference                                         │
+│  └───────────┼────────────────────────────────────────────────────┘
 │              │
-│  ┌───────────┼─────────────────────────────────────────────────────┐
+│  ┌───────────┼────────────────────────────────────────────────────┐
 │  │  compose externo (ej. local-ai-lab)  ·  se une a: inference    │
-│  │           │                                                      │
-│  │  Open WebUI ──OpenAI API──► litellm:4000                        │
-│  │  Ollama ──────────────────► litellm (modelos ollama/*)          │
-│  └─────────────────────────────────────────────────────────────────┘
+│  │           │                                                    │
+│  │  Open WebUI ──OpenAI API──> litellm:4000                       │
+│  │  Ollama ──────────────────> litellm (modelos ollama/*)         │
+│  └────────────────────────────────────────────────────────────────┘
 │
 │  Pipeline métricas:  node-exporter / cAdvisor → Prometheus → Grafana
 │  Pipeline trazas:    LiteLLM → OTel Collector → ClickHouse → Grafana
@@ -130,13 +130,25 @@ Cada span generado por LiteLLM incluye:
 | Atributo OTel | Descripción |
 |---|---|
 | `gen_ai.request.model` | Modelo invocado |
-| `gen_ai.usage.prompt_tokens` | Tokens del prompt |
-| `gen_ai.usage.completion_tokens` | Tokens de la respuesta |
+| `gen_ai.usage.input_tokens` | Tokens del prompt |
+| `gen_ai.usage.output_tokens` | Tokens de la respuesta |
 | `gen_ai.usage.total_tokens` | Total de tokens consumidos |
 | `Duration` | Latencia de extremo a extremo (nanosegundos) |
 
 Los spans se almacenan en la tabla `otel_traces` de ClickHouse y son consultables
 mediante SQL estándar desde Grafana.
+
+## Dashboards de Grafana
+
+| Dashboard | Datasource | Descripción |
+|---|---|---|
+| Hardware | Prometheus | CPU, RAM, carga del sistema y GPU AMD (node-exporter) |
+| cAdvisor | Prometheus | CPU y RAM por contenedor |
+| LLM Observability | ClickHouse | Métricas agregadas de llamadas LLM por modelo: requests, tokens, latencia |
+
+El dashboard **LLM Observability** (`grafana/provisioning/dashboards/llm-observability.json`)
+incluye dos secciones: **Overview** con selector de modelo para filtrar métricas
+agregadas, y **By Model** con una tabla comparativa de todos los modelos activos.
 
 ## Levantar el stack
 
@@ -154,8 +166,8 @@ docker compose -f docker-compose.exporters.yml up -d
 docker compose -f docker-compose.ai.yml up -d
 ```
 
-Levantar `docker-compose.ai.yml` antes que los composes externos es obligatorio
-— es quien crea la red `inference` que los composes externos necesitan unirse.
+Levantar `docker-compose.ai.yml` antes que los composes externos es obligatorio,
+es quien crea la red `inference` que los composes externos necesitan unirse.
 
 ## Adaptar a tu entorno
 
@@ -177,7 +189,7 @@ Ejemplo con Open WebUI:
 open-webui:
   image: ghcr.io/open-webui/open-webui:main
   environment:
-    - OPENAI_API_BASE_URL=http://litellm:4000/v1
+    - OPENAI_API_BASE_URL=http://litellm:4000
     - OPENAI_API_KEY=sk-local
   networks:
     - ai-lab
@@ -213,3 +225,7 @@ con `node_drm_card_info` y ajustar las queries de Grafana.
 Para NVIDIA, node-exporter no cubre GPU. La alternativa habitual es
 [dcgm-exporter](https://github.com/NVIDIA/dcgm-exporter), que expone métricas
 bajo el prefijo `DCGM_FI_*`.
+
+## Licencia
+
+[MIT](LICENSE)

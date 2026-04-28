@@ -1,0 +1,334 @@
+{
+  "annotations": { "list": [] },
+  "description": "Aggregate LLM call metrics from OTel traces stored in ClickHouse via LiteLLM",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 20,
+      "title": "Overview",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Total Requests",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "rawSql": "SELECT count() AS value\nFROM otel.otel_traces\nWHERE $__timeFilter(Timestamp)\n  AND SpanAttributes['gen_ai.request.model'] != ''\n  AND $__conditionalAll(SpanAttributes['gen_ai.request.model'] IN (${model:singlequote}), $model)",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 4, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Avg Tokens / Request",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "rawSql": "SELECT avg(toUInt64OrZero(SpanAttributes['gen_ai.usage.total_tokens'])) AS value\nFROM otel.otel_traces\nWHERE $__timeFilter(Timestamp)\n  AND SpanAttributes['gen_ai.request.model'] != ''\n  AND $__conditionalAll(SpanAttributes['gen_ai.request.model'] IN (${model:singlequote}), $model)",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "yellow", "value": null }] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 9, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Avg Input Tokens / Request",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "rawSql": "SELECT avg(toUInt64OrZero(SpanAttributes['gen_ai.usage.input_tokens'])) AS value\nFROM otel.otel_traces\nWHERE $__timeFilter(Timestamp)\n  AND SpanAttributes['gen_ai.request.model'] != ''\n  AND $__conditionalAll(SpanAttributes['gen_ai.request.model'] IN (${model:singlequote}), $model)",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 14, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Avg Output Tokens / Request",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "rawSql": "SELECT avg(toUInt64OrZero(SpanAttributes['gen_ai.usage.output_tokens'])) AS value\nFROM otel.otel_traces\nWHERE $__timeFilter(Timestamp)\n  AND SpanAttributes['gen_ai.request.model'] != ''\n  AND $__conditionalAll(SpanAttributes['gen_ai.request.model'] IN (${model:singlequote}), $model)",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 19, "y": 1 },
+      "id": 5,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Avg Request Duration",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "rawSql": "SELECT avg(Duration) / 1000000 AS value\nFROM otel.otel_traces\nWHERE $__timeFilter(Timestamp)\n  AND SpanAttributes['gen_ai.request.model'] != ''\n  AND $__conditionalAll(SpanAttributes['gen_ai.request.model'] IN (${model:singlequote}), $model)",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisLabel": "requests",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Requests per Time",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "rawSql": "SELECT\n  $__timeInterval(Timestamp) AS time,\n  SpanAttributes['gen_ai.request.model'] AS model,\n  count() AS requests\nFROM otel.otel_traces\nWHERE $__timeFilter(Timestamp)\n  AND SpanAttributes['gen_ai.request.model'] != ''\n  AND $__conditionalAll(SpanAttributes['gen_ai.request.model'] IN (${model:singlequote}), $model)\nGROUP BY time, model\nORDER BY time ASC",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisLabel": "tokens",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
+      "id": 7,
+      "options": {
+        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Token Usage over Time",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "rawSql": "SELECT\n  $__timeInterval(Timestamp) AS time,\n  SpanAttributes['gen_ai.request.model'] AS model,\n  sum(toUInt64OrZero(SpanAttributes['gen_ai.usage.total_tokens'])) AS tokens\nFROM otel.otel_traces\nWHERE $__timeFilter(Timestamp)\n  AND SpanAttributes['gen_ai.request.model'] != ''\n  AND $__conditionalAll(SpanAttributes['gen_ai.request.model'] IN (${model:singlequote}), $model)\nGROUP BY time, model\nORDER BY time ASC",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 21,
+      "title": "By Model",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Avg Duration (ms)" },
+            "properties": [{ "id": "unit", "value": "ms" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 15 },
+      "id": 8,
+      "options": {
+        "footer": { "show": false },
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Total Requests", "desc": true }]
+      },
+      "title": "Metrics by Model",
+      "type": "table",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "rawSql": "SELECT\n  SpanAttributes['gen_ai.request.model'] AS Model,\n  count() AS \"Total Requests\",\n  round(avg(toUInt64OrZero(SpanAttributes['gen_ai.usage.total_tokens'])), 1) AS \"Avg Tokens\",\n  round(avg(toUInt64OrZero(SpanAttributes['gen_ai.usage.input_tokens'])), 1) AS \"Avg Input Tokens\",\n  round(avg(toUInt64OrZero(SpanAttributes['gen_ai.usage.output_tokens'])), 1) AS \"Avg Output Tokens\",\n  round(avg(Duration) / 1000000, 1) AS \"Avg Duration (ms)\"\nFROM otel.otel_traces\nWHERE $__timeFilter(Timestamp)\n  AND SpanAttributes['gen_ai.request.model'] != ''\nGROUP BY Model\nORDER BY \"Total Requests\" DESC",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["llm", "observability", "clickhouse", "otel"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+        "definition": "SELECT DISTINCT SpanAttributes['gen_ai.request.model'] AS model FROM otel.otel_traces WHERE SpanAttributes['gen_ai.request.model'] != '' ORDER BY model ASC",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "model",
+        "label": "Model",
+        "options": [],
+        "query": "SELECT DISTINCT SpanAttributes['gen_ai.request.model'] AS model FROM otel.otel_traces WHERE SpanAttributes['gen_ai.request.model'] != '' ORDER BY model ASC",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "LLM Observability",
+  "uid": "llm-observability",
+  "version": 1
+}
